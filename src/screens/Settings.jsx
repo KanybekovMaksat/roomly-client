@@ -1,5 +1,6 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useRooms, useSettings } from '../hooks';
-import { useNav, useToast } from '../store';
+import { useAuth, useNav, useToast } from '../store';
 import { perPersonFmt } from '../lib/format';
 import { headerBar, roundBtn } from '../lib/styles';
 import { Loading } from '../ui/overlays';
@@ -10,8 +11,15 @@ const currencyLabel = (c) => (c === 'KGS' ? 'Сом (KGS)' : c || '—');
 export default function Settings() {
   const { back, push } = useNav();
   const toast = useToast();
+  const { logout } = useAuth();
+  const qc = useQueryClient();
   const { data: s, isLoading } = useSettings();
   const { data: rooms } = useRooms();
+
+  const handleLogout = () => {
+    qc.clear();
+    logout();
+  };
 
   const handleExport = async (format) => {
     try {
@@ -67,6 +75,10 @@ export default function Settings() {
           <div style={{ display: 'flex', gap: '10px' }}>
             <div onClick={() => handleExport('excel')} style={{ ...exportBtn, color: '#00a63e' }}><i className="ti ti-file-spreadsheet" style={{ fontSize: '22px' }} />Excel</div>
             <div onClick={() => handleExport('pdf')} style={{ ...exportBtn, color: '#e7000b' }}><i className="ti ti-file-type-pdf" style={{ fontSize: '22px' }} />PDF</div>
+          </div>
+
+          <div onClick={handleLogout} style={{ marginTop: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', padding: '14px 0', borderRadius: '14px', background: '#fff', border: '1px solid #ffe2e2', color: '#e7000b', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
+            <i className="ti ti-logout" />Выйти
           </div>
 
           <div style={{ textAlign: 'center', color: '#c4c4c4', fontSize: '11px', padding: '28px 0 8px' }}>Roomly · Developed by .51 · v1.0</div>

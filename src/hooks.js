@@ -46,6 +46,14 @@ export const useAvailability = ({ roomId, checkIn, checkOut, excludeId, enabled 
     enabled: !!enabled,
   });
 
+// Доступность нескольких комнат сразу (мультибронирование).
+export const useAvailabilityBatch = ({ roomIds, checkIn, checkOut, enabled }) =>
+  useQuery({
+    queryKey: ['availabilityBatch', { roomIds, checkIn, checkOut }],
+    queryFn: () => post('/bookings/availability-batch', { roomIds, checkIn, checkOut }),
+    enabled: !!enabled,
+  });
+
 // ---------------- mutations ----------------
 // Любая мутация освежает все данные (приложение небольшое — так проще и надёжнее).
 const useInvalidateAll = () => {
@@ -53,9 +61,18 @@ const useInvalidateAll = () => {
   return () => qc.invalidateQueries();
 };
 
+export const useLogin = () =>
+  useMutation({ mutationFn: (body) => post('/auth/login', body) });
+
 export const useCreateBooking = () => {
   const inv = useInvalidateAll();
   return useMutation({ mutationFn: (body) => post('/bookings', body), onSuccess: inv });
+};
+
+// Пакетное создание: одна бронь клиента на нескольких комнатах.
+export const useCreateBookingBatch = () => {
+  const inv = useInvalidateAll();
+  return useMutation({ mutationFn: (body) => post('/bookings/batch', body), onSuccess: inv });
 };
 
 export const useUpdateBooking = () => {

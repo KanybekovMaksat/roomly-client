@@ -55,6 +55,7 @@ export default function BookingCard({ id }) {
           </div>
 
           <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: '20px', padding: '16px', marginTop: '12px' }}>
+            <Row label={`Цена за человека${b.guests > 1 ? ` · ${b.guests} гост.` : ''}`} value={mfmt(b.pricePerDay)} />
             <Row label="Общая стоимость" value={mfmt(b.totalPrice)} />
             <Row label="Оплачено" value={mfmt(b.paid)} valueColor="#00a63e" />
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 2px', fontSize: '16px', borderTop: '1px solid #f5f5f5', marginTop: '4px' }}>

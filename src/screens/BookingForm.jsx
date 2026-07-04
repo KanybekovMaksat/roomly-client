@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  useAvailability, useBooking, useCreateBooking, useRooms, useUpdateBooking,
+  useAvailability, useAvailabilityBatch, useBooking,
+  useCreateBookingBatch, useRooms, useUpdateBooking,
 } from '../hooks';
 import { useModals, useNav, useToast } from '../store';
 import { mfmt, nightsBetween, todayStr, dfmt } from '../lib/format';
@@ -13,6 +14,24 @@ const METHODS = [
   ['Перевод', 'Перевод'],
 ];
 
+// «5 мест» / «2 места» / «1 место»
+const placesLabel = (n) => {
+  const a = Math.abs(n) % 100;
+  const b = n % 10;
+  if (a > 10 && a < 20) return `${n} мест`;
+  if (b === 1) return `${n} место`;
+  if (b >= 2 && b <= 4) return `${n} места`;
+  return `${n} мест`;
+};
+
+// Эффективная цена за человека: индивидуальная (если задана > 0) либо цена комнаты.
+const priceOf = (room, priceStr) => {
+  const p = Number(priceStr);
+  return priceStr !== '' && priceStr != null && Number.isFinite(p) && p > 0
+    ? p
+    : room?.pricePerDay || 0;
+};
+
 export default function BookingForm({ id, roomId }) {
   const editing = !!id;
   const { back, resetTo } = useNav();
@@ -20,7 +39,7 @@ export default function BookingForm({ id, roomId }) {
   const toast = useToast();
   const { data: rooms } = useRooms();
   const { data: booking } = useBooking(id);
-  const create = useCreateBooking();
+  const createBatch = useCreateBookingBatch();
   const update = useUpdateBooking();
 
   const [form, setForm] = useState(null);
@@ -28,54 +47,147 @@ export default function BookingForm({ id, roomId }) {
   useEffect(() => {
     if (form) return;
     if (editing) {
-      if (booking) setForm({ roomId: booking.roomId, client: booking.client, phone: booking.phone || '', checkIn: booking.checkIn, checkOut: booking.checkOut, guests: booking.guests, comment: booking.comment || '', prepay: '', method: 'Наличные' });
+      if (booking)
+        setForm({
+          roomId: booking.roomId,
+          price: String(booking.pricePerDay ?? ''),
+          client: booking.client,
+          phone: booking.phone || '',
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          guests: booking.guests,
+          comment: booking.comment || '',
+        });
     } else {
-      setForm({ roomId: roomId || '', client: '', phone: '', checkIn: todayStr(), checkOut: '', guests: 1, comment: '', prepay: '', method: 'Наличные' });
+      setForm({
+        rooms: roomId ? [{ roomId, guests: 1, price: '' }] : [],
+        client: '', phone: '', checkIn: todayStr(), checkOut: '',
+        comment: '', prepay: '', method: 'Наличные',
+      });
     }
   }, [editing, booking, roomId, form]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const nights = form ? nightsBetween(form.checkIn, form.checkOut) : 0;
-  const room = rooms?.find((r) => r.id === form?.roomId);
-  const price = room ? room.pricePerDay : 0;
-  const guests = form?.guests || 0;
-  const total = nights * price * guests;
-  const prepay = parseInt(form?.prepay) || 0;
+  const roomById = (rid) => rooms?.find((r) => r.id === rid);
 
-  const avail = useAvailability({
-    roomId: form?.roomId, checkIn: form?.checkIn, checkOut: form?.checkOut,
-    excludeId: id, enabled: !!(form?.roomId && nights > 0),
+  // ----- доступность -----
+  const single = useAvailability({
+    roomId: editing ? form?.roomId : '',
+    checkIn: form?.checkIn, checkOut: form?.checkOut, excludeId: id,
+    enabled: editing && !!(form?.roomId && nights > 0),
   });
-  const conflict = avail.data && !avail.data.available ? avail.data.conflict : null;
-  const isAvailable = avail.data?.available;
+  const batch = useAvailabilityBatch({
+    roomIds: !editing ? (form?.rooms || []).map((r) => r.roomId) : [],
+    checkIn: form?.checkIn, checkOut: form?.checkOut,
+    enabled: !editing && (form?.rooms?.length > 0) && nights > 0,
+  });
 
-  if (!form) return <FormShell title={editing ? 'Изменить бронь' : 'Новое бронирование'} back={back}><Loading /></FormShell>;
+  if (!form)
+    return (
+      <FormShell title={editing ? 'Изменить бронь' : 'Новое бронирование'} back={back}>
+        <Loading />
+      </FormShell>
+    );
 
-  const canSave = !!form.roomId && nights > 0 && !!form.client.trim() && guests >= 1 && !(avail.data && !avail.data.available);
+  // ----- общие вычисления -----
+  const editRoom = editing ? roomById(form.roomId) : null;
+  const lineTotal = (r) => nights * priceOf(roomById(r.roomId), r.price) * (r.guests || 1);
+  const grandTotal = editing
+    ? nights * priceOf(editRoom, form.price) * (form.guests || 1)
+    : (form.rooms || []).reduce((s, r) => s + lineTotal(r), 0);
+  const prepay = parseInt(form.prepay) || 0;
+
+  const unavailable =
+    !editing && batch.data
+      ? (form.rooms || []).filter((r) => batch.data[r.roomId] && !batch.data[r.roomId].available)
+      : [];
+  const editConflict =
+    editing && single.data && !single.data.available ? single.data.conflict : null;
+
+  const isSelected = (rid) =>
+    editing ? form.roomId === rid : (form.rooms || []).some((r) => r.roomId === rid);
+
+  const toggleRoom = (rid) => {
+    if (editing) return set('roomId', rid);
+    setForm((f) => {
+      const exists = f.rooms.some((r) => r.roomId === rid);
+      return {
+        ...f,
+        rooms: exists
+          ? f.rooms.filter((r) => r.roomId !== rid)
+          : [...f.rooms, { roomId: rid, guests: 1, price: '' }],
+      };
+    });
+  };
+  const setRoom = (rid, patch) =>
+    setForm((f) => ({
+      ...f,
+      rooms: f.rooms.map((r) => (r.roomId === rid ? { ...r, ...patch } : r)),
+    }));
+
+  const roomsChosen = editing ? (form.roomId ? 1 : 0) : (form.rooms || []).length;
+  const canSave =
+    roomsChosen > 0 &&
+    nights > 0 &&
+    !!form.client.trim() &&
+    unavailable.length === 0 &&
+    !editConflict;
 
   const save = async () => {
-    if (!form.roomId) return toast.show('Выберите комнату');
+    if (roomsChosen === 0) return toast.show('Выберите комнату');
     if (!form.client.trim()) return toast.show('Введите имя клиента');
     if (nights <= 0) return toast.show('Проверьте даты');
-    if (conflict) return showConflict({ client: conflict.client, room: conflict.roomName, range: `${dfmt(conflict.checkIn)} – ${dfmt(conflict.checkOut)}` });
+    if (editConflict)
+      return showConflict({
+        client: editConflict.client, room: editConflict.roomName,
+        range: `${dfmt(editConflict.checkIn)} – ${dfmt(editConflict.checkOut)}`,
+      });
+    if (unavailable.length > 0) {
+      const r0 = unavailable[0];
+      const c = batch.data[r0.roomId].conflict;
+      return showConflict({
+        client: c?.client || '', room: roomById(r0.roomId)?.name || '',
+        range: `${dfmt(form.checkIn)} – ${dfmt(form.checkOut)}`,
+      });
+    }
     try {
       if (editing) {
-        await update.mutateAsync({ id, body: { roomId: form.roomId, client: form.client, phone: form.phone, checkIn: form.checkIn, checkOut: form.checkOut, guests: form.guests, comment: form.comment } });
+        await update.mutateAsync({
+          id,
+          body: {
+            roomId: form.roomId, client: form.client, phone: form.phone,
+            checkIn: form.checkIn, checkOut: form.checkOut, guests: form.guests,
+            comment: form.comment, pricePerDay: priceOf(editRoom, form.price),
+          },
+        });
         back();
         toast.show('Бронирование обновлено');
       } else {
-        await create.mutateAsync({ roomId: form.roomId, client: form.client, phone: form.phone, checkIn: form.checkIn, checkOut: form.checkOut, guests: form.guests, comment: form.comment, prepay, method: form.method });
+        const res = await createBatch.mutateAsync({
+          client: form.client, phone: form.phone,
+          checkIn: form.checkIn, checkOut: form.checkOut,
+          comment: form.comment, prepay, method: form.method,
+          rooms: form.rooms.map((r) => ({
+            roomId: r.roomId, guests: r.guests,
+            pricePerDay: priceOf(roomById(r.roomId), r.price),
+          })),
+        });
         resetTo('bookings');
-        toast.show('Бронирование создано');
+        toast.show(res?.count > 1 ? `Создано броней: ${res.count}` : 'Бронирование создано');
       }
     } catch (e) {
-      if (e.response?.status === 409) showConflict({ client: form.client, room: room?.name || '', range: `${dfmt(form.checkIn)} – ${dfmt(form.checkOut)}` });
+      if (e.response?.status === 409)
+        showConflict({
+          client: form.client, room: '',
+          range: `${dfmt(form.checkIn)} – ${dfmt(form.checkOut)}`,
+        });
       else toast.show(e.response?.data?.message || 'Не удалось сохранить');
     }
   };
 
-  const roomOptions = (rooms || []).filter((r) => r.active || r.id === form.roomId);
+  const roomOptions = (rooms || []).filter((r) => r.active || isSelected(r.id));
 
   return (
     <FormShell title={editing ? 'Изменить бронь' : 'Новое бронирование'} back={back}
@@ -85,14 +197,23 @@ export default function BookingForm({ id, roomId }) {
           <div onClick={canSave ? save : undefined} style={{ flex: 1, textAlign: 'center', padding: '14px 0', borderRadius: '9999px', background: canSave ? '#155dfc' : '#c9d6f5', color: '#fff', fontSize: '15px', fontWeight: 600, pointerEvents: canSave ? 'auto' : 'none', cursor: 'pointer', transition: 'background .15s' }}>Сохранить</div>
         </div>
       }>
-      <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373', marginBottom: '8px' }}>Комната</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373' }}>{editing ? 'Комната' : 'Комнаты'}</div>
+        {!editing && <div style={{ fontSize: '11px', color: '#a1a1a1' }}>можно выбрать несколько</div>}
+      </div>
       <div className="scr" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '6px' }}>
         {roomOptions.map((r) => {
-          const a = form.roomId === r.id;
+          const a = isSelected(r.id);
           return (
-            <div key={r.id} onClick={() => set('roomId', r.id)} style={{ border: `1px solid ${a ? '#155dfc' : '#e5e5e5'}`, background: a ? '#eff6ff' : '#fff', borderRadius: '14px', padding: '10px 12px', minWidth: '132px', cursor: 'pointer', flexShrink: 0 }}>
+            <div key={r.id} onClick={() => toggleRoom(r.id)} style={{ position: 'relative', border: `1px solid ${a ? '#155dfc' : '#e5e5e5'}`, background: a ? '#eff6ff' : '#fff', borderRadius: '14px', padding: '10px 12px', minWidth: '132px', cursor: 'pointer', flexShrink: 0 }}>
               <div style={{ fontSize: '14px', fontWeight: 600, color: a ? '#155dfc' : '#0a0a0a' }}>{r.name}</div>
+              <div style={{ fontSize: '11px', color: '#737373', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <i className="ti ti-users" style={{ fontSize: '12px' }} />{placesLabel(r.capacity)}
+              </div>
               <div style={{ fontSize: '12px', color: '#737373', marginTop: '2px' }}>{mfmt(r.pricePerDay)}</div>
+              {!editing && a && (
+                <span style={{ position: 'absolute', top: '8px', right: '8px', color: '#155dfc', fontSize: '15px' }}><i className="ti ti-circle-check-filled" /></span>
+              )}
             </div>
           );
         })}
@@ -104,20 +225,56 @@ export default function BookingForm({ id, roomId }) {
         <input value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="Номер телефона" type="tel" inputMode="tel" autoComplete="tel" style={inp} />
       </div>
 
-      <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373', margin: '18px 0 8px' }}>Даты и гости</div>
+      <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373', margin: '18px 0 8px' }}>Даты</div>
       <div style={{ display: 'flex', gap: '10px' }}>
         <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: '12px', padding: '9px 12px' }}><div style={{ fontSize: '11px', color: '#a1a1a1' }}>Заезд</div><input type="date" value={form.checkIn} onChange={(e) => set('checkIn', e.target.value)} style={dateInp} /></div>
         <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: '12px', padding: '9px 12px' }}><div style={{ fontSize: '11px', color: '#a1a1a1' }}>Выезд</div><input type="date" value={form.checkOut} onChange={(e) => set('checkOut', e.target.value)} style={dateInp} /></div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', border: '1px solid #e5e5e5', borderRadius: '12px', padding: '11px 14px', marginTop: '10px' }}>
-        <span style={{ fontSize: '15px' }}>Количество гостей</span>
-        <Stepper value={form.guests} dec={() => set('guests', Math.max(1, form.guests - 1))} inc={() => set('guests', form.guests + 1)} />
+
+      {/* ---- Комнаты, гости и индивидуальные цены ---- */}
+      <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373', margin: '18px 0 8px' }}>
+        {editing ? 'Гости и цена' : 'Гости и цена по комнатам'}
       </div>
 
-      {conflict && (
-        <Banner bg="#fef2f2" border="#ffe2e2" color="#e7000b" icon="ti ti-alert-triangle-filled">Комната занята на эти даты. Занято: {conflict.client}, до {dfmt(conflict.checkOut)}</Banner>
+      {editing ? (
+        <RoomLine
+          name={editRoom?.name || '—'} capacity={editRoom?.capacity}
+          guests={form.guests}
+          onGuests={(g) => set('guests', g)}
+          price={form.price} defPrice={editRoom?.pricePerDay || 0}
+          onPrice={(v) => set('price', v)}
+          subtotal={grandTotal} nights={nights}
+        />
+      ) : (form.rooms || []).length === 0 ? (
+        <div style={{ background: '#fff', border: '1px dashed #e5e5e5', borderRadius: '14px', padding: '18px', textAlign: 'center', color: '#a1a1a1', fontSize: '13px' }}>
+          Выберите комнату выше
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {form.rooms.map((r) => {
+            const ro = roomById(r.roomId);
+            const av = batch.data?.[r.roomId];
+            return (
+              <RoomLine key={r.roomId}
+                name={ro?.name || '—'} capacity={ro?.capacity}
+                guests={r.guests}
+                onGuests={(g) => setRoom(r.roomId, { guests: g })}
+                price={r.price} defPrice={ro?.pricePerDay || 0}
+                onPrice={(v) => setRoom(r.roomId, { price: v })}
+                subtotal={lineTotal(r)} nights={nights}
+                available={nights > 0 && av ? av.available : undefined}
+                conflictName={av && !av.available ? av.conflict?.client : ''}
+                onRemove={() => toggleRoom(r.roomId)}
+              />
+            );
+          })}
+        </div>
       )}
-      {isAvailable && (
+
+      {editConflict && (
+        <Banner bg="#fef2f2" border="#ffe2e2" color="#e7000b" icon="ti ti-alert-triangle-filled">Комната занята на эти даты. Занято: {editConflict.client}, до {dfmt(editConflict.checkOut)}</Banner>
+      )}
+      {editing && single.data?.available && (
         <Banner bg="#eafff2" border="#c3f2d5" color="#00a63e" icon="ti ti-circle-check-filled">Комната свободна на выбранные даты</Banner>
       )}
 
@@ -125,11 +282,12 @@ export default function BookingForm({ id, roomId }) {
 
       <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373', margin: '18px 0 8px' }}>Оплата</div>
       <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: '16px', padding: '14px' }}>
-        <SumRow label="Цена за человека" value={mfmt(price)} />
-        <SumRow label="Количество гостей" value={guests} />
+        {!editing && form.rooms.length > 1 && form.rooms.map((r) => {
+          const ro = roomById(r.roomId);
+          return <SumRow key={r.roomId} label={`${ro?.name || '—'} · ${r.guests} гост.`} value={mfmt(lineTotal(r))} />;
+        })}
         <SumRow label="Количество суток" value={nights} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: '16px', borderTop: '1px solid #f5f5f5', marginTop: '4px' }}><span style={{ fontWeight: 600 }}>Итого</span><span style={{ fontWeight: 700, color: '#155dfc' }}>{mfmt(total)}</span></div>
-        <div style={{ fontSize: '11px', color: '#a1a1a1', textAlign: 'right', marginTop: '-2px' }}>{mfmt(price)} × {guests} гост. × {nights} сут.</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: '16px', borderTop: '1px solid #f5f5f5', marginTop: '4px' }}><span style={{ fontWeight: 600 }}>Итого</span><span style={{ fontWeight: 700, color: '#155dfc' }}>{mfmt(grandTotal)}</span></div>
         {!editing && (
           <>
             <div style={{ marginTop: '10px' }}>
@@ -142,11 +300,60 @@ export default function BookingForm({ id, roomId }) {
                 return <div key={full} onClick={() => set('method', full)} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: '10px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', background: a ? '#155dfc' : 'transparent', color: a ? '#fff' : '#525252' }}>{lbl}</div>;
               })}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 2px', fontSize: '14px' }}><span style={{ color: '#737373' }}>Остаток</span><span style={{ fontWeight: 700, color: '#e7000b' }}>{mfmt(Math.max(0, total - prepay))}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 2px', fontSize: '14px' }}><span style={{ color: '#737373' }}>Остаток</span><span style={{ fontWeight: 700, color: '#e7000b' }}>{mfmt(Math.max(0, grandTotal - prepay))}</span></div>
           </>
         )}
       </div>
     </FormShell>
+  );
+}
+
+// Строка комнаты: гости (степпер) + редактируемая цена + подытог.
+function RoomLine({ name, capacity, guests, onGuests, price, defPrice, onPrice, subtotal, nights, available, conflictName, onRemove }) {
+  const over = capacity != null && guests > capacity;
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: '14px', padding: '12px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <span style={{ fontSize: '15px', fontWeight: 600 }}>{name}</span>
+          {capacity != null && (
+            <span style={{ fontSize: '11px', color: '#737373', background: '#f5f5f5', borderRadius: '9999px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
+              <i className="ti ti-users" style={{ fontSize: '11px', marginRight: '3px' }} />{placesLabel(capacity)}
+            </span>
+          )}
+        </div>
+        {onRemove && (
+          <span onClick={onRemove} style={{ color: '#a1a1a1', fontSize: '18px', cursor: 'pointer', flexShrink: 0 }}><i className="ti ti-x" /></span>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
+        <span style={{ fontSize: '13px', color: '#525252' }}>Гостей{over && <span style={{ color: '#e7000b', marginLeft: '6px' }}>больше вместимости</span>}</span>
+        <Stepper value={guests} over={over} dec={() => onGuests(Math.max(1, guests - 1))} inc={() => onGuests(guests + 1)} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', gap: '10px' }}>
+        <span style={{ fontSize: '13px', color: '#525252' }}>Цена / чел. / сутки</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <input value={price} onChange={(e) => onPrice(e.target.value.replace(/[^0-9]/g, ''))} placeholder={String(defPrice)} inputMode="numeric" style={{ width: '96px', textAlign: 'right', border: '1px solid #e5e5e5', borderRadius: '10px', padding: '9px 11px', fontSize: '15px', fontWeight: 600 }} />
+          <span style={{ fontSize: '13px', color: '#a1a1a1' }}>сом</span>
+        </div>
+      </div>
+      {price !== '' && Number(price) > 0 && Number(price) !== defPrice && (
+        <div style={{ fontSize: '11px', color: Number(price) < defPrice ? '#00a63e' : '#c2410c', textAlign: 'right', marginTop: '4px' }}>
+          {Number(price) < defPrice ? 'Скидка' : 'Наценка'} · обычная цена {mfmt(defPrice)}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f5f5f5' }}>
+        {available === false ? (
+          <span style={{ fontSize: '12px', color: '#e7000b', display: 'flex', alignItems: 'center', gap: '4px' }}><i className="ti ti-alert-triangle-filled" />Занято{conflictName ? `: ${conflictName}` : ''}</span>
+        ) : available === true ? (
+          <span style={{ fontSize: '12px', color: '#00a63e', display: 'flex', alignItems: 'center', gap: '4px' }}><i className="ti ti-circle-check-filled" />Свободно</span>
+        ) : <span style={{ fontSize: '12px', color: '#a1a1a1' }}>{nights > 0 ? `${nights} сут.` : 'Укажите даты'}</span>}
+        <span style={{ fontSize: '15px', fontWeight: 700 }}>{mfmt(subtotal)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -166,10 +373,10 @@ function FormShell({ title, back, children, footer }) {
 const inp = { border: '1px solid #e5e5e5', borderRadius: '12px', padding: '13px 14px', fontSize: '15px', background: '#fff', width: '100%' };
 const dateInp = { border: 'none', fontSize: '14px', width: '100%', background: 'transparent', padding: '2px 0' };
 
-const Stepper = ({ value, dec, inc }) => (
+const Stepper = ({ value, dec, inc, over }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
     <div onClick={dec} style={stepBtn}>−</div>
-    <span style={{ fontSize: '16px', fontWeight: 600, minWidth: '16px', textAlign: 'center' }}>{value}</span>
+    <span style={{ fontSize: '16px', fontWeight: 600, minWidth: '16px', textAlign: 'center', color: over ? '#e7000b' : '#0a0a0a' }}>{value}</span>
     <div onClick={inc} style={stepBtn}>+</div>
   </div>
 );

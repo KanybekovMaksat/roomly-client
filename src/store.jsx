@@ -1,4 +1,37 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { getToken, setToken } from './api';
+
+// ------------------------------------------------------------------
+// Авторизация — единый пользователь-администратор, токен в localStorage.
+// ------------------------------------------------------------------
+const AuthCtx = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [authed, setAuthed] = useState(!!getToken());
+
+  useEffect(() => {
+    const onUnauth = () => setAuthed(false);
+    window.addEventListener('roomly-unauthorized', onUnauth);
+    return () => window.removeEventListener('roomly-unauthorized', onUnauth);
+  }, []);
+
+  const login = useCallback((token) => {
+    setToken(token);
+    setAuthed(true);
+  }, []);
+  const logout = useCallback(() => {
+    setToken('');
+    setAuthed(false);
+  }, []);
+
+  return (
+    <AuthCtx.Provider value={{ authed, login, logout }}>
+      {children}
+    </AuthCtx.Provider>
+  );
+}
+
+export const useAuth = () => useContext(AuthCtx);
 
 // ------------------------------------------------------------------
 // Навигация — стек экранов (как в дизайн-прототипе: push / back / tab).

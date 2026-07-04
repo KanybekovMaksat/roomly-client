@@ -61,14 +61,15 @@ function toExcel(rows, title) {
   download(blob, `roomly-bookings-${stamp()}.xls`);
 }
 
+// PDF формируется через диалог печати браузера («Сохранить как PDF»).
+// Печатаем скрытый iframe в том же документе — это надёжнее window.open,
+// который блокируется всплывающими окнами (особенно в PWA и на телефоне).
 function toPdf(rows, title) {
   const { head, body } = buildRows(rows);
-  const w = window.open('', '_blank');
-  if (!w) throw new Error('popup blocked');
-  w.document.write(
-    `<html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+  const html =
+    `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(title)}</title><style>
       *{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;}
-      body{margin:24px;color:#0a0a0a;}
+      body{margin:0;color:#0a0a0a;}
       h3{font-size:16px;margin:0 0 14px;}
       table{border-collapse:collapse;width:100%;font-size:11px;}
       thead th{background:#155dfc;color:#fff;text-align:left;padding:7px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -76,12 +77,43 @@ function toPdf(rows, title) {
       tbody tr:nth-child(even){background:#f7f9ff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
       @page{size:landscape;margin:12mm;}
     </style></head><body><h3>${esc(title)}</h3>` +
-      `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>` +
-      `</body></html>`,
-  );
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 400);
+    `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>` +
+    `</body></html>`;
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  Object.assign(iframe.style, {
+    position: 'fixed', right: '0', bottom: '0',
+    width: '0', height: '0', border: '0', visibility: 'hidden',
+  });
+  document.body.appendChild(iframe);
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    setTimeout(() => iframe.remove(), 500);
+  };
+
+  const doPrint = () => {
+    const win = iframe.contentWindow;
+    if (!win) return cleanup();
+    try {
+      win.focus();
+      if (win.onafterprint !== undefined) win.onafterprint = cleanup;
+      win.print();
+    } catch {
+      cleanup();
+    }
+    // Подстраховка на случай, если onafterprint не сработает.
+    setTimeout(cleanup, 60000);
+  };
+
+  iframe.onload = () => setTimeout(doPrint, 250);
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
 }
 
 /**

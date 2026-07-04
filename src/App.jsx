@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ModalsProvider, NavProvider, ToastProvider, useNav } from './store';
+import { AuthProvider, ModalsProvider, NavProvider, ToastProvider, useAuth, useNav } from './store';
 import { BottomNav, Fab } from './ui/chrome';
 
+import Login from './screens/Login';
 import Home from './screens/Home';
 import Bookings from './screens/Bookings';
 import Rooms from './screens/Rooms';
@@ -18,8 +19,26 @@ import Changelog from './screens/Changelog';
 import Settings from './screens/Settings';
 import Modals from './screens/Modals';
 
+// Повторяем только сетевые сбои и 5xx (до 2 раз, с нарастающей паузой);
+// клиентские ошибки 4xx (валидация, конфликт, 401) повторять бессмысленно.
+const shouldRetry = (failureCount, error) => {
+  const status = error?.response?.status;
+  if (status && status >= 400 && status < 500) return false;
+  return failureCount < 2;
+};
+
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 10000, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 10000,
+      retry: shouldRetry,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    },
+    // Мутации (создание/оплата/удаление) не повторяем автоматически —
+    // иначе при разрыве связи возможны дубли записей.
+    mutations: { retry: 0 },
+  },
 });
 
 const SCREENS = {
@@ -43,6 +62,7 @@ const NAV_SCREENS = ['home', 'bookings', 'rooms', 'finance', 'more', 'bookingCar
 const FAB_SCREENS = ['home', 'bookings'];
 
 function Shell() {
+  const { authed } = useAuth();
   const { cur, push } = useNav();
   const Screen = SCREENS[cur.screen] || Home;
   const { screen, ...params } = cur;
@@ -50,10 +70,16 @@ function Shell() {
   return (
     <div className="app-container">
       <div className="mobile-frame">
-        <Screen key={JSON.stringify(cur)} {...params} />
-        {NAV_SCREENS.includes(cur.screen) && <BottomNav />}
-        {FAB_SCREENS.includes(cur.screen) && <Fab onClick={() => push('bookingForm')} />}
-        <Modals />
+        {!authed ? (
+          <Login />
+        ) : (
+          <>
+            <Screen key={JSON.stringify(cur)} {...params} />
+            {NAV_SCREENS.includes(cur.screen) && <BottomNav />}
+            {FAB_SCREENS.includes(cur.screen) && <Fab onClick={() => push('bookingForm')} />}
+            <Modals />
+          </>
+        )}
       </div>
     </div>
   );
@@ -62,13 +88,15 @@ function Shell() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <NavProvider>
-        <ToastProvider>
-          <ModalsProvider>
-            <Shell />
-          </ModalsProvider>
-        </ToastProvider>
-      </NavProvider>
+      <AuthProvider>
+        <NavProvider>
+          <ToastProvider>
+            <ModalsProvider>
+              <Shell />
+            </ModalsProvider>
+          </ToastProvider>
+        </NavProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
