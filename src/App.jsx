@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ModalsProvider, NavProvider, ToastProvider, useNav } from './store';
-import { BottomNav, Fab, StatusBar } from './ui/chrome';
+import { BottomNav, Fab } from './ui/chrome';
 
 import Home from './screens/Home';
 import Bookings from './screens/Bookings';
@@ -50,7 +50,6 @@ function Shell() {
   return (
     <div className="app-container">
       <div className="mobile-frame">
-        <StatusBar />
         <Screen key={JSON.stringify(cur)} {...params} />
         {NAV_SCREENS.includes(cur.screen) && <BottomNav />}
         {FAB_SCREENS.includes(cur.screen) && <Fab onClick={() => push('bookingForm')} />}
