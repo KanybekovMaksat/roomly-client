@@ -124,6 +124,13 @@ function toPdf(rows, title) {
  */
 export async function exportBookings(format, houseName = '') {
   const rows = await get('/bookings', { params: { filter: 'Все' } });
+  // В выгрузке — хронологический порядок: самые ранние брони сверху
+  // (по дате заезда, затем по времени создания записи).
+  rows.sort((a, b) =>
+    a.checkIn < b.checkIn ? -1
+      : a.checkIn > b.checkIn ? 1
+        : String(a.createdAt || '') < String(b.createdAt || '') ? -1 : 1,
+  );
   const today = new Date().toLocaleDateString('ru-RU');
   const title = `Бронирования${houseName ? ` — ${houseName}` : ''} · ${today}`;
   if (format === 'excel') toExcel(rows, title);
