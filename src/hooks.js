@@ -103,6 +103,12 @@ export const useAddPayment = () => {
   return useMutation({ mutationFn: (body) => post('/payments', body), onSuccess: inv });
 };
 
+// Исправление существующего платежа (сумма/способ/дата) без удаления записи.
+export const useUpdatePayment = () => {
+  const inv = useInvalidateAll();
+  return useMutation({ mutationFn: ({ id, body }) => put(`/payments/${id}`, body), onSuccess: inv });
+};
+
 export const useCreateRoom = () => {
   const inv = useInvalidateAll();
   return useMutation({ mutationFn: (body) => post('/rooms', body), onSuccess: inv });

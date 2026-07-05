@@ -6,7 +6,7 @@ import { Loading, ErrorState } from '../ui/overlays';
 
 export default function BookingCard({ id }) {
   const { back, push } = useNav();
-  const { openPay, openExtend, askConfirm } = useModals();
+  const { openPay, openEditPay, openExtend, askConfirm } = useModals();
   const toast = useToast();
   const { data: b, isLoading, isError } = useBooking(id);
   const complete = useCompleteBooking();
@@ -64,16 +64,20 @@ export default function BookingCard({ id }) {
             </div>
           </div>
 
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#737373', margin: '18px 4px 10px' }}>История оплат</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '18px 4px 10px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#737373' }}>История оплат</div>
+            {b.payments?.length > 0 && <div style={{ fontSize: '11px', color: '#a1a1a1' }}>нажмите, чтобы исправить</div>}
+          </div>
           {(!b.payments || b.payments.length === 0) && (
             <div style={{ background: '#fff', border: '1px dashed #e5e5e5', borderRadius: '16px', padding: '20px', textAlign: 'center', color: '#a1a1a1', fontSize: '13px' }}>Оплат ещё не было</div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {b.payments?.map((p) => (
-              <div key={p.id} style={{ background: '#fff', border: '1px solid #f0f0f0', borderRadius: '14px', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {b.payments?.map((p, i) => (
+              <div key={p.id} onClick={() => openEditPay(p)} style={{ background: '#fff', border: '1px solid #f0f0f0', borderRadius: '14px', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                 <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#eff6ff', color: '#155dfc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}><i className={methodIcon(p.method)} /></span>
-                <div style={{ flex: 1 }}><div style={{ fontSize: '14px', fontWeight: 600 }}>{mfmt(p.amount)}</div><div style={{ fontSize: '12px', color: '#a1a1a1' }}>{p.method}</div></div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: '14px', fontWeight: 600 }}>{mfmt(p.amount)}{i === 0 && <span style={{ fontSize: '11px', fontWeight: 500, color: '#155dfc', marginLeft: '6px' }}>предоплата</span>}</div><div style={{ fontSize: '12px', color: '#a1a1a1' }}>{p.method}</div></div>
                 <div style={{ fontSize: '12px', color: '#737373' }}>{dfmtY(p.date)}</div>
+                <i className="ti ti-pencil" style={{ fontSize: '15px', color: '#c0c0c0' }} />
               </div>
             ))}
           </div>

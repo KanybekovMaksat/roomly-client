@@ -7,6 +7,7 @@ import { Loading, ErrorState } from '../ui/overlays';
 // action -> внешний вид (иконка / цвет / фон)
 const STYLE = {
   PAYMENT_ADDED: ['ti ti-cash', '#00a63e', '#eafff2'],
+  PAYMENT_EDITED: ['ti ti-pencil', '#c2410c', '#fffbeb'],
   CREATE_BOOKING: ['ti ti-calendar-plus', '#155dfc', '#eff6ff'],
   UPDATE_BOOKING: ['ti ti-edit', '#155dfc', '#eff6ff'],
   EXTEND_BOOKING: ['ti ti-calendar-plus', '#155dfc', '#eff6ff'],

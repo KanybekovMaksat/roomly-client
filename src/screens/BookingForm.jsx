@@ -7,6 +7,7 @@ import { useModals, useNav, useToast } from '../store';
 import { mfmt, nightsBetween, todayStr, dfmt } from '../lib/format';
 import { headerBar, roundBtn } from '../lib/styles';
 import { Loading } from '../ui/overlays';
+import DateRangeField from '../ui/DateRangeField';
 
 const METHODS = [
   ['Наличные', 'Наличные'],
@@ -226,10 +227,11 @@ export default function BookingForm({ id, roomId }) {
       </div>
 
       <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373', margin: '18px 0 8px' }}>Даты</div>
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: '12px', padding: '9px 12px' }}><div style={{ fontSize: '11px', color: '#a1a1a1' }}>Заезд</div><input type="date" value={form.checkIn} onChange={(e) => set('checkIn', e.target.value)} style={dateInp} /></div>
-        <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: '12px', padding: '9px 12px' }}><div style={{ fontSize: '11px', color: '#a1a1a1' }}>Выезд</div><input type="date" value={form.checkOut} onChange={(e) => set('checkOut', e.target.value)} style={dateInp} /></div>
-      </div>
+      <DateRangeField
+        checkIn={form.checkIn}
+        checkOut={form.checkOut}
+        onChange={(ci, co) => setForm((f) => ({ ...f, checkIn: ci, checkOut: co }))}
+      />
 
       {/* ---- Комнаты, гости и индивидуальные цены ---- */}
       <div style={{ fontSize: '12px', fontWeight: 600, color: '#737373', margin: '18px 0 8px' }}>
@@ -371,7 +373,6 @@ function FormShell({ title, back, children, footer }) {
 }
 
 const inp = { border: '1px solid #e5e5e5', borderRadius: '12px', padding: '13px 14px', fontSize: '15px', background: '#fff', width: '100%' };
-const dateInp = { border: 'none', fontSize: '14px', width: '100%', background: 'transparent', padding: '2px 0' };
 
 const Stepper = ({ value, dec, inc, over }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>

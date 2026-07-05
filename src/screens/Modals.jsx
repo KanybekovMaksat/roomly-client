@@ -1,4 +1,4 @@
-import { useAddPayment, useExtendBooking } from '../hooks';
+import { useAddPayment, useExtendBooking, useUpdatePayment } from '../hooks';
 import { useModals, useNav, useToast } from '../store';
 import { mfmt, dfmtY, dfmt } from '../lib/format';
 import { payStyle } from '../lib/styles';
@@ -11,6 +11,7 @@ export default function Modals() {
   const toast = useToast();
   const { push } = useNav();
   const addPayment = useAddPayment();
+  const updatePayment = useUpdatePayment();
   const extendBooking = useExtendBooking();
 
   return (
@@ -39,6 +40,38 @@ export default function Modals() {
               } catch (e) { toast.show(e.response?.data?.message || 'Ошибка'); }
             }} style={{ textAlign: 'center', padding: '15px 0', borderRadius: '9999px', background: '#155dfc', color: '#fff', fontSize: '15px', fontWeight: 600, marginTop: '18px', cursor: 'pointer' }}>
               Добавить {mfmt(parseInt(m.pay.amount) || 0)}
+            </div>
+          </Sheet>
+        </>
+      )}
+
+      {/* Исправление оплаты / предоплаты (без удаления записи) */}
+      {m.editPay && (
+        <>
+          <Backdrop onClick={() => m.setEditPay(null)} />
+          <Sheet>
+            <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '4px' }}>Исправить оплату</div>
+            <div style={{ fontSize: '13px', color: '#737373', marginBottom: '14px' }}>Запись не удаляется — меняется сумма, способ и дата.</div>
+            <div style={{ fontSize: '12px', color: '#737373', marginBottom: '6px' }}>Сумма</div>
+            <input value={m.editPay.amount} onChange={(e) => m.setEditPay({ ...m.editPay, amount: e.target.value.replace(/[^0-9]/g, '') })} placeholder="0" inputMode="numeric" style={{ width: '100%', border: '1px solid #e5e5e5', borderRadius: '12px', padding: '14px', fontSize: '20px', fontWeight: 700 }} />
+            <div style={{ fontSize: '12px', color: '#737373', margin: '14px 0 6px' }}>Способ оплаты</div>
+            <div style={{ display: 'flex', background: '#f5f5f5', borderRadius: '12px', padding: '4px', gap: '2px' }}>
+              {METHODS.map(([lbl, full]) => {
+                const a = m.editPay.method === full;
+                return <div key={full} onClick={() => m.setEditPay({ ...m.editPay, method: full })} style={segStyle(a)}>{lbl}</div>;
+              })}
+            </div>
+            <div style={{ fontSize: '12px', color: '#737373', margin: '14px 0 6px' }}>Дата</div>
+            <input type="date" value={m.editPay.date} onChange={(e) => m.setEditPay({ ...m.editPay, date: e.target.value })} style={{ width: '100%', border: '1px solid #e5e5e5', borderRadius: '12px', padding: '12px 14px', fontSize: '15px' }} />
+            <div onClick={async () => {
+              const amt = parseInt(m.editPay.amount) || 0;
+              if (amt <= 0) return toast.show('Введите сумму');
+              try {
+                await updatePayment.mutateAsync({ id: m.editPay.id, body: { amount: amt, method: m.editPay.method, date: m.editPay.date } });
+                m.setEditPay(null); toast.show('Оплата исправлена');
+              } catch (e) { toast.show(e.response?.data?.message || 'Ошибка'); }
+            }} style={{ textAlign: 'center', padding: '15px 0', borderRadius: '9999px', background: '#155dfc', color: '#fff', fontSize: '15px', fontWeight: 600, marginTop: '18px', cursor: 'pointer' }}>
+              Сохранить
             </div>
           </Sheet>
         </>

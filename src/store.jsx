@@ -91,6 +91,7 @@ const ModalsCtx = createContext(null);
 
 export function ModalsProvider({ children }) {
   const [pay, setPay] = useState(null);
+  const [editPay, setEditPay] = useState(null);
   const [extend, setExtend] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [conflict, setConflict] = useState(null);
@@ -98,11 +99,20 @@ export function ModalsProvider({ children }) {
 
   const value = {
     pay, setPay,
+    editPay, setEditPay,
     extend, setExtend,
     confirm, setConfirm,
     conflict, setConflict,
     daySheet, setDaySheet,
     openPay: (bookingId) => setPay({ bookingId, amount: '', method: 'Наличные' }),
+    // Исправление существующего платежа/предоплаты — открываем с текущими значениями.
+    openEditPay: (p) =>
+      setEditPay({
+        id: p.id,
+        amount: String(p.amount ?? ''),
+        method: p.method || 'Наличные',
+        date: p.date || '',
+      }),
     openExtend: (bookingId) => setExtend({ bookingId, nights: 1 }),
     askConfirm: (cfg) => setConfirm(cfg),
     showConflict: (info) => setConflict(info),
