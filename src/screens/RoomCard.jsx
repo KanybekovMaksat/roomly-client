@@ -41,10 +41,11 @@ export default function RoomCard({ id }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ fontSize: '16px', fontWeight: 600 }}>{guest.client}</div><i className="ti ti-chevron-right" style={{ color: '#155dfc' }} /></div>
               <div style={{ fontSize: '13px', color: '#525252', marginTop: '2px' }}>{guest.phone}</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #d7e6ff' }}>
+                <div><div style={{ fontSize: '11px', color: '#737373' }}>Заезд</div><div style={{ fontSize: '14px', fontWeight: 600 }}>{dfmtY(guest.checkIn)}</div></div>
+                <div style={{ textAlign: 'right' }}><div style={{ fontSize: '11px', color: '#737373' }}>Выезд</div><div style={{ fontSize: '14px', fontWeight: 600 }}>{dfmtY(guest.checkOut)}</div></div>
                 <div><div style={{ fontSize: '11px', color: '#737373' }}>Гостей</div><div style={{ fontSize: '14px', fontWeight: 600 }}>{guest.guests}</div></div>
                 <div style={{ textAlign: 'right' }}><div style={{ fontSize: '11px', color: '#737373' }}>Итоговая цена</div><div style={{ fontSize: '14px', fontWeight: 600 }}>{mfmt(guest.totalPrice)}</div></div>
-                <div><div style={{ fontSize: '11px', color: '#737373' }}>Выезд</div><div style={{ fontSize: '14px', fontWeight: 600 }}>{dfmtY(guest.checkOut)}</div></div>
-                {guest.remaining > 0 && <div style={{ textAlign: 'right' }}><div style={{ fontSize: '11px', color: '#737373' }}>Остаток</div><div style={{ fontSize: '14px', fontWeight: 600, color: '#e7000b' }}>{mfmt(guest.remaining)}</div></div>}
+                {guest.remaining > 0 && <div><div style={{ fontSize: '11px', color: '#737373' }}>Остаток</div><div style={{ fontSize: '14px', fontWeight: 600, color: '#e7000b' }}>{mfmt(guest.remaining)}</div></div>}
               </div>
             </div>
           )}
